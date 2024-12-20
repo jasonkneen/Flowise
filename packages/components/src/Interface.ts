@@ -93,6 +93,7 @@ export interface INodeParams {
     hint?: Record<string, string>
     tabIdentifier?: string
     tabs?: Array<INodeParams>
+    refresh?: boolean
 }
 
 export interface INodeExecutionData {
@@ -183,6 +184,7 @@ export interface IMultiAgentNode {
 }
 
 type SeqAgentType = 'agent' | 'condition' | 'end' | 'start' | 'tool' | 'state' | 'llm'
+export type ConversationHistorySelection = 'user_question' | 'last_message' | 'all_messages' | 'empty'
 
 export interface ISeqAgentNode {
     id: string
@@ -419,3 +421,25 @@ export interface IServerSideEventStreamer {
     streamAbortEvent(chatId: string): void
     streamEndEvent(chatId: string): void
 }
+
+export enum FollowUpPromptProvider {
+    ANTHROPIC = 'chatAnthropic',
+    AZURE_OPENAI = 'azureChatOpenAI',
+    GOOGLE_GENAI = 'chatGoogleGenerativeAI',
+    MISTRALAI = 'chatMistralAI',
+    OPENAI = 'chatOpenAI'
+}
+
+export type FollowUpPromptProviderConfig = {
+    [key in FollowUpPromptProvider]: {
+        credentialId: string
+        modelName: string
+        prompt: string
+        temperature: string
+    }
+}
+
+export type FollowUpPromptConfig = {
+    status: boolean
+    selectedProvider: FollowUpPromptProvider
+} & FollowUpPromptProviderConfig
