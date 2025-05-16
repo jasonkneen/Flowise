@@ -9,7 +9,7 @@ import { StyledFab } from '@/ui-component/button/StyledFab'
 // icons
 import { IconSearch, IconArrowLeft, IconEdit } from '@tabler/icons-react'
 
-import useSearchShorcut from '@/hooks/useSearchShortcut'
+import useSearchShortcut from '@/hooks/useSearchShortcut'
 import { getOS } from '@/utils/genericHelper'
 
 const os = getOS()
@@ -32,7 +32,7 @@ const ViewHeader = ({
 }) => {
     const theme = useTheme()
     const searchInputRef = useRef()
-    useSearchShorcut(searchInputRef)
+    useSearchShortcut(searchInputRef)
 
     return (
         <Box sx={{ flexGrow: 1, py: 1.25, width: '100%' }}>
@@ -54,7 +54,7 @@ const ViewHeader = ({
                     <Box sx={{ display: 'flex', alignItems: 'start', flexDirection: 'column' }}>
                         <Typography
                             sx={{
-                                fontSize: '2rem',
+                                fontSize: '1.8rem',
                                 fontWeight: 600,
                                 display: '-webkit-box',
                                 WebkitLineClamp: 3,
