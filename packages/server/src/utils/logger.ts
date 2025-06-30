@@ -4,6 +4,7 @@ import { hostname } from 'node:os'
 import config from './config' // should be replaced by node-config or similar
 import { createLogger, transports, format } from 'winston'
 import { NextFunction, Request, Response } from 'express'
+import DailyRotateFile from 'winston-daily-rotate-file'
 import { S3ClientConfig } from '@aws-sdk/client-s3'
 import { LoggingWinston } from '@google-cloud/logging-winston'
 
@@ -27,17 +28,21 @@ if (process.env.STORAGE_TYPE === 's3') {
     const customURL = process.env.S3_ENDPOINT_URL
     const forcePathStyle = process.env.S3_FORCE_PATH_STYLE === 'true'
 
-    if (!region || !s3Bucket) {
+    if (!region || region.trim() === '' || !s3Bucket || s3Bucket.trim() === '') {
         throw new Error('S3 storage configuration is missing')
     }
 
     const s3Config: S3ClientConfig = {
         region: region,
-        endpoint: customURL,
         forcePathStyle: forcePathStyle
     }
 
-    if (accessKeyId && secretAccessKey) {
+    // Only include endpoint if customURL is not empty
+    if (customURL && customURL.trim() !== '') {
+        s3Config.endpoint = customURL
+    }
+
+    if (accessKeyId && accessKeyId.trim() !== '' && secretAccessKey && secretAccessKey.trim() !== '') {
         s3Config.credentials = {
             accessKeyId: accessKeyId,
             secretAccessKey: secretAccessKey
@@ -110,17 +115,16 @@ const logger = createLogger({
     defaultMeta: {
         package: 'server'
     },
+    exitOnError: false,
     transports: [
         new transports.Console(),
         ...(!process.env.STORAGE_TYPE || process.env.STORAGE_TYPE === 'local'
             ? [
-                  new transports.File({
-                      filename: path.join(logDir, config.logging.server.filename ?? 'server.log'),
+                  new DailyRotateFile({
+                      filename: path.join(logDir, config.logging.server.filename ?? 'server-%DATE%.log'),
+                      datePattern: 'YYYY-MM-DD-HH',
+                      maxSize: '20m',
                       level: config.logging.server.level ?? 'info'
-                  }),
-                  new transports.File({
-                      filename: path.join(logDir, config.logging.server.errorFilename ?? 'server-error.log'),
-                      level: 'error' // Log only errors to this file
                   })
               ]
             : []),
@@ -134,13 +138,7 @@ const logger = createLogger({
         ...(process.env.STORAGE_TYPE === 'gcs' ? [gcsServerStream] : [])
     ],
     exceptionHandlers: [
-        ...(!process.env.STORAGE_TYPE || process.env.STORAGE_TYPE === 'local'
-            ? [
-                  new transports.File({
-                      filename: path.join(logDir, config.logging.server.errorFilename ?? 'server-error.log')
-                  })
-              ]
-            : []),
+        ...(process.env.DEBUG && process.env.DEBUG === 'true' ? [new transports.Console()] : []),
         ...(process.env.STORAGE_TYPE === 's3'
             ? [
                   new transports.Stream({
@@ -151,13 +149,7 @@ const logger = createLogger({
         ...(process.env.STORAGE_TYPE === 'gcs' ? [gcsErrorStream] : [])
     ],
     rejectionHandlers: [
-        ...(!process.env.STORAGE_TYPE || process.env.STORAGE_TYPE === 'local'
-            ? [
-                  new transports.File({
-                      filename: path.join(logDir, config.logging.server.errorFilename ?? 'server-error.log')
-                  })
-              ]
-            : []),
+        ...(process.env.DEBUG && process.env.DEBUG === 'true' ? [new transports.Console()] : []),
         ...(process.env.STORAGE_TYPE === 's3'
             ? [
                   new transports.Stream({
@@ -165,13 +157,24 @@ const logger = createLogger({
                   })
               ]
             : []),
-        ...(process.env.STORAGE_TYPE === 'gcs' ? [gcsErrorStream] : [])
+        ...(process.env.STORAGE_TYPE === 'gcs' ? [gcsErrorStream] : []),
+        // Always provide a fallback rejection handler when no other handlers are configured
+        ...((!process.env.DEBUG || process.env.DEBUG !== 'true') && process.env.STORAGE_TYPE !== 's3' && process.env.STORAGE_TYPE !== 'gcs'
+            ? [new transports.Console()]
+            : [])
     ]
 })
 
 export function expressRequestLogger(req: Request, res: Response, next: NextFunction): void {
     const unwantedLogURLs = ['/api/v1/node-icon/', '/api/v1/components-credentials-icon/', '/api/v1/ping']
+
     if (/\/api\/v1\//i.test(req.url) && !unwantedLogURLs.some((url) => new RegExp(url, 'i').test(req.url))) {
+        // Create a sanitized copy of the request body
+        const sanitizedBody = { ...req.body }
+        if (sanitizedBody.password) {
+            sanitizedBody.password = '********'
+        }
+
         const fileLogger = createLogger({
             format: combine(timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }), format.json(), errors({ stack: true })),
             defaultMeta: {
@@ -179,13 +182,14 @@ export function expressRequestLogger(req: Request, res: Response, next: NextFunc
                 request: {
                     method: req.method,
                     url: req.url,
-                    body: req.body,
+                    body: sanitizedBody, // Use sanitized body instead of raw body
                     query: req.query,
                     params: req.params,
                     headers: req.headers
                 }
             },
             transports: [
+                ...(process.env.DEBUG && process.env.DEBUG === 'true' ? [new transports.Console()] : []),
                 ...(!process.env.STORAGE_TYPE || process.env.STORAGE_TYPE === 'local'
                     ? [
                           new transports.File({

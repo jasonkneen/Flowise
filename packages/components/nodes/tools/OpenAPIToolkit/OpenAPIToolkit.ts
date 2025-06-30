@@ -85,8 +85,9 @@ class OpenAPIToolkit_Tools implements INode {
         let data
         if (yamlFileBase64.startsWith('FILE-STORAGE::')) {
             const file = yamlFileBase64.replace('FILE-STORAGE::', '')
+            const orgId = options.orgId
             const chatflowid = options.chatflowid
-            const fileData = await getFileFromStorage(file, chatflowid)
+            const fileData = await getFileFromStorage(file, orgId, chatflowid)
             const utf8String = fileData.toString('utf-8')
 
             data = load(utf8String)
@@ -110,7 +111,7 @@ class OpenAPIToolkit_Tools implements INode {
 
         const appDataSource = options.appDataSource as DataSource
         const databaseEntities = options.databaseEntities as IDatabaseEntity
-        const variables = await getVars(appDataSource, databaseEntities, nodeData)
+        const variables = await getVars(appDataSource, databaseEntities, nodeData, options)
 
         const flow = { chatflowId: options.chatflowid }
 
@@ -242,6 +243,9 @@ const getTools = (
         const methods = paths[path]
         for (const method in methods) {
             // example of method: "get"
+            if (method !== 'get' && method !== 'post' && method !== 'put' && method !== 'delete' && method !== 'patch') {
+                continue
+            }
             const spec = methods[method]
             const toolName = spec.operationId
             const toolDesc = spec.description || spec.summary || toolName
@@ -317,7 +321,7 @@ const getTools = (
             dynamicStructuredTool.setVariables(variables)
             dynamicStructuredTool.setFlowObject(flow)
             dynamicStructuredTool.returnDirect = returnDirect
-            tools.push(dynamicStructuredTool)
+            if (toolName && toolDesc) tools.push(dynamicStructuredTool)
         }
     }
     return tools
