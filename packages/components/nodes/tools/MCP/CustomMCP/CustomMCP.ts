@@ -3,6 +3,7 @@ import { ICommonObject, IDatabaseEntity, INode, INodeData, INodeOptionsValue, IN
 import { MCPToolkit } from '../core'
 import { getVars, prepareSandboxVars } from '../../../../src/utils'
 import { DataSource } from 'typeorm'
+import hash from 'object-hash'
 
 const mcpServerConfig = `{
     "command": "npx",
@@ -71,7 +72,11 @@ class Custom_MCP implements INode {
                     label: 'How to use',
                     value: howToUseCode
                 },
-                placeholder: mcpServerConfig
+                placeholder: mcpServerConfig,
+                warning:
+                    process.env.CUSTOM_MCP_SECURITY_CHECK === 'true'
+                        ? 'In next release, only Remote MCP with url is supported. Read more <a href="https://docs.flowiseai.com/tutorials/tools-and-mcp#streamable-http-recommended" target="_blank">here</a>'
+                        : undefined
             },
             {
                 label: 'Available Actions',
@@ -140,6 +145,24 @@ class Custom_MCP implements INode {
             sandbox['$vars'] = prepareSandboxVars(variables)
         }
 
+        const workspaceId = options?.searchOptions?.workspaceId?._value || options?.workspaceId
+
+        let canonicalConfig
+        try {
+            canonicalConfig = JSON.parse(mcpServerConfig)
+        } catch (e) {
+            canonicalConfig = mcpServerConfig
+        }
+
+        const cacheKey = hash({ workspaceId, canonicalConfig, sandbox })
+
+        if (options.cachePool) {
+            const cachedResult = await options.cachePool.getMCPCache(cacheKey)
+            if (cachedResult) {
+                return cachedResult.tools
+            }
+        }
+
         try {
             let serverParams
             if (typeof mcpServerConfig === 'object') {
@@ -152,7 +175,9 @@ class Custom_MCP implements INode {
 
             // Compatible with stdio and SSE
             let toolkit: MCPToolkit
-            if (serverParams?.command === undefined) {
+            if (process.env.CUSTOM_MCP_PROTOCOL === 'sse') {
+                toolkit = new MCPToolkit(serverParams, 'sse')
+            } else if (serverParams?.command === undefined) {
                 toolkit = new MCPToolkit(serverParams, 'sse')
             } else {
                 toolkit = new MCPToolkit(serverParams, 'stdio')
@@ -161,6 +186,10 @@ class Custom_MCP implements INode {
             await toolkit.initialize()
 
             const tools = toolkit.tools ?? []
+
+            if (options.cachePool) {
+                await options.cachePool.addMCPCache(cacheKey, { toolkit, tools })
+            }
 
             return tools as Tool[]
         } catch (error) {

@@ -1,8 +1,9 @@
 import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
-import axios, { AxiosRequestConfig, Method, ResponseType } from 'axios'
+import { AxiosRequestConfig, Method, ResponseType } from 'axios'
 import FormData from 'form-data'
 import * as querystring from 'querystring'
 import { getCredentialData, getCredentialParam } from '../../../src/utils'
+import { secureAxiosRequest } from '../../../src/httpSecurity'
 
 class HTTP_Agentflow implements INode {
     label: string
@@ -328,8 +329,8 @@ class HTTP_Agentflow implements INode {
                 }
             }
 
-            // Make the HTTP request
-            const response = await axios(requestConfig)
+            // Make the secure HTTP request that validates all URLs in redirect chains
+            const response = await secureAxiosRequest(requestConfig)
 
             // Process response based on response type
             let responseData
